@@ -1,9 +1,9 @@
 # train_models.py - Version complète et corrigée
 import pandas as pd
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Dropout
+import keras
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 import joblib
@@ -246,4 +246,5 @@ if __name__ == "__main__":
         )
         print("✅ Test réussi!")
     except Exception as e:
+
         print(f"❌ Test échoué: {e}")
