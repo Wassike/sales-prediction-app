@@ -1,4 +1,4 @@
-# train_models.py - Version PyTorch CORRIGÉE pour Streamlit Cloud
+# train_models.py - Version PyTorch CORRIGÉE avec méthode predict
 import pandas as pd
 import numpy as np
 import torch
@@ -63,11 +63,15 @@ def _train_from_file(file_path, column_index, sequence_length, epochs, batch_siz
     """Entraîne à partir d'un fichier CSV"""
     print(f"📂 Chargement des données depuis: {file_path}")
     
-    try:
-        col_idx = int(column_index)
-    except (ValueError, TypeError):
-        print(f"⚠️  Erreur conversion column_index, utilisation de 0")
-        col_idx = 0
+    # Gestion améliorée de column_index
+    if isinstance(column_index, str):
+        # C'est un nom de colonne, on le garde tel quel
+        col_name = column_index
+    else:
+        try:
+            col_name = str(column_index)
+        except (ValueError, TypeError):
+            col_name = "0"
     
     # Charger et préparer les données
     scaled_data, scaler, original_data = load_and_scale(file_path)
@@ -89,9 +93,8 @@ def _train_from_file(file_path, column_index, sequence_length, epochs, batch_siz
     if len(scaled_data.shape) == 1:
         y = scaled_data[sequence_length:]
     else:
-        if col_idx >= scaled_data.shape[1]:
-            col_idx = 0
-        y = scaled_data[sequence_length:, col_idx]
+        # Pour les données 2D, utiliser la première colonne
+        y = scaled_data[sequence_length:, 0]
     
     print(f"📊 Données préparées - X: {X.shape}, y: {y.shape}")
     
