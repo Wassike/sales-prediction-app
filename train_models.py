@@ -1,51 +1,58 @@
-# train_models.py - Version complète et corrigée
+# train_models.py - Version PyTorch pour Streamlit Cloud
 import pandas as pd
 import numpy as np
-from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout
-import keras
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, mean_absolute_error
 import joblib
 import os
 from preprocessing import load_and_scale, create_sequences
 
+# Définition du modèle LSTM avec PyTorch
+class LSTMModel(nn.Module):
+    def __init__(self, input_size=1, hidden_size=50, num_layers=2, output_size=1):
+        super(LSTMModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
+        self.fc = nn.Linear(hidden_size, output_size)
+        
+    def forward(self, x):
+        # Initialisation des états cachés
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+        
+        # Passage through LSTM
+        out, _ = self.lstm(x, (h0, c0))
+        
+        # On prend seulement le dernier output
+        out = self.fc(out[:, -1, :])
+        return out
+
 def train_and_save_model(file_path, column_index=0, sequence_length=50, epochs=10, batch_size=32, model_type='lstm', model_path='models/'):
     """
     Entraîne et sauvegarde un modèle - Version compatible avec votre app.py
-    
-    Parameters (deux modes supportés):
-    - Mode 1: train_and_save_model(X_train, y_train, X_test, y_test, model_type, model_path)
-    - Mode 2: train_and_save_model(file_path, column_index, sequence_length, epochs, batch_size)
     """
     
     print(f"🔧 Début de l'entraînement avec model_type: {model_type}")
     
     # Détection automatique du mode d'appel
     if isinstance(file_path, (np.ndarray, pd.DataFrame)) and not isinstance(file_path, str):
-        # Mode 1: Données déjà préparées (X_train, y_train, X_test, y_test)
         return _train_with_prepared_data(file_path, column_index, sequence_length, epochs, batch_size, model_type, model_path)
     else:
-        # Mode 2: Chemin de fichier (file_path, column_index, etc.)
         return _train_from_file(file_path, column_index, sequence_length, epochs, batch_size, model_type, model_path)
 
 def _train_from_file(file_path, column_index, sequence_length, epochs, batch_size, model_type, model_path):
-    """Entraîne à partir d'un fichier CSV - Version corrigée"""
+    """Entraîne à partir d'un fichier CSV"""
     print(f"📂 Chargement des données depuis: {file_path}")
     
-    # DEBUG: Afficher les paramètres
-    print(f"🔍 DEBUG - column_index: {column_index}, type: {type(column_index)}")
-    print(f"🔍 DEBUG - sequence_length: {sequence_length}")
-    print(f"🔍 DEBUG - epochs: {epochs}")
-    print(f"🔍 DEBUG - batch_size: {batch_size}")
-    print(f"🔍 DEBUG - model_type: {model_type}")
-    
-    # Convertir column_index en entier de manière sécurisée
     try:
         col_idx = int(column_index)
-        print(f"✅ column_index converti en: {col_idx}")
-    except (ValueError, TypeError) as e:
-        print(f"⚠️  Erreur conversion column_index: {e}, utilisation de 0")
+    except (ValueError, TypeError):
+        print(f"⚠️  Erreur conversion column_index, utilisation de 0")
         col_idx = 0
     
     # Charger et préparer les données
@@ -62,21 +69,15 @@ def _train_from_file(file_path, column_index, sequence_length, epochs, batch_siz
     if sequences is None:
         raise ValueError("❌ Impossible de créer les séquences")
     
-    # PRÉPARER LES LABELS - Version robuste
+    # PRÉPARER LES LABELS
     X = sequences
     
-    # Gérer la préparation des labels selon la forme des données
     if len(scaled_data.shape) == 1:
-        # Données 1D
         y = scaled_data[sequence_length:]
-        print("📊 Utilisation des données 1D pour les labels")
     else:
-        # Données 2D - vérifier que l'index est valide
         if col_idx >= scaled_data.shape[1]:
-            print(f"⚠️  column_index {col_idx} hors limites (max: {scaled_data.shape[1]-1}), utilisation de 0")
             col_idx = 0
         y = scaled_data[sequence_length:, col_idx]
-        print(f"📊 Utilisation de la colonne {col_idx} pour les labels")
     
     print(f"📊 Données préparées - X: {X.shape}, y: {y.shape}")
     
@@ -100,7 +101,7 @@ def _train_from_file(file_path, column_index, sequence_length, epochs, batch_siz
     
     # Entraîner le modèle
     if model_type == 'lstm':
-        model, history = _train_lstm(X_train, y_train, X_test, y_test, epochs, batch_size, model_path)
+        model, history = _train_lstm_pytorch(X_train, y_train, X_test, y_test, epochs, batch_size, model_path)
         return model, scaler
     elif model_type == 'random_forest':
         model, accuracy = _train_random_forest(X_train, y_train, X_test, y_test, model_path)
@@ -108,63 +109,74 @@ def _train_from_file(file_path, column_index, sequence_length, epochs, batch_siz
     else:
         raise ValueError("❌ model_type doit être 'lstm' ou 'random_forest'")
 
-def _train_with_prepared_data(X_train, y_train, X_test, y_test, model_type, model_path):
-    """Entraîne avec des données déjà préparées"""
-    print("🔧 Utilisation des données préparées")
+def _train_lstm_pytorch(X_train, y_train, X_test, y_test, epochs, batch_size, model_path):
+    """Entraîne un modèle LSTM avec PyTorch"""
+    print("🔮 Entraînement du modèle LSTM (PyTorch)...")
     
-    # Créer le dossier models
-    os.makedirs(model_path, exist_ok=True)
+    # Conversion en tenseurs PyTorch
+    X_train_tensor = torch.FloatTensor(X_train)
+    y_train_tensor = torch.FloatTensor(y_train).view(-1, 1)
+    X_test_tensor = torch.FloatTensor(X_test)
+    y_test_tensor = torch.FloatTensor(y_test).view(-1, 1)
     
-    if model_type == 'lstm':
-        model, history = _train_lstm(X_train, y_train, X_test, y_test, 10, 32, model_path)
-        return model, None
-    elif model_type == 'random_forest':
-        model, accuracy = _train_random_forest(X_train, y_train, X_test, y_test, model_path)
-        return model, None
-    else:
-        raise ValueError("❌ model_type doit être 'lstm' ou 'random_forest'")
-
-def _train_lstm(X_train, y_train, X_test, y_test, epochs, batch_size, model_path):
-    """Entraîne un modèle LSTM"""
-    print("🔮 Entraînement du modèle LSTM...")
+    # Création du modèle
+    model = LSTMModel(input_size=X_train.shape[2], hidden_size=50, num_layers=2, output_size=1)
     
-    # S'assurer que les données sont au bon format
-    if len(X_train.shape) == 2:
-        X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-        X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
+    # Définition de la loss et de l'optimiseur
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     
-    print(f"🔧 Forme des données LSTM - X_train: {X_train.shape}, X_test: {X_test.shape}")
+    # Entraînement
+    train_losses = []
+    for epoch in range(epochs):
+        model.train()
+        
+        # Mini-batch training
+        for i in range(0, len(X_train_tensor), batch_size):
+            # Get mini-batch
+            X_batch = X_train_tensor[i:i+batch_size]
+            y_batch = y_train_tensor[i:i+batch_size]
+            
+            # Forward pass
+            outputs = model(X_batch)
+            loss = criterion(outputs, y_batch)
+            
+            # Backward pass et optimisation
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        
+        # Calcul de la loss sur l'ensemble d'entraînement
+        model.eval()
+        with torch.no_grad():
+            train_outputs = model(X_train_tensor)
+            train_loss = criterion(train_outputs, y_train_tensor)
+            train_losses.append(train_loss.item())
+        
+        if (epoch + 1) % 10 == 0:
+            print(f'📈 Epoch [{epoch+1}/{epochs}], Loss: {train_loss.item():.4f}')
     
-    # Créer le modèle LSTM
-    model = Sequential([
-        LSTM(50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])),
-        Dropout(0.2),
-        LSTM(50, return_sequences=False),
-        Dropout(0.2),
-        Dense(25),
-        Dense(1)  # Régression (une valeur de sortie)
-    ])
+    # Évaluation sur le set de test
+    model.eval()
+    with torch.no_grad():
+        test_outputs = model(X_test_tensor)
+        test_loss = criterion(test_outputs, y_test_tensor)
+        mae = mean_absolute_error(y_test_tensor.numpy(), test_outputs.numpy())
     
-    # Compiler le modèle
-    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    print(f"✅ Entraînement terminé - Test Loss: {test_loss.item():.4f}, MAE: {mae:.4f}")
     
-    print(f"🔧 Début de l'entraînement LSTM - Epochs: {epochs}, Batch size: {batch_size}")
+    # Sauvegarde du modèle
+    model_path_full = os.path.join(model_path, 'lstm_model.pth')
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'input_size': X_train.shape[2],
+        'hidden_size': 50,
+        'num_layers': 2
+    }, model_path_full)
     
-    # Entraîner le modèle
-    history = model.fit(
-        X_train, y_train,
-        batch_size=batch_size,
-        epochs=epochs,
-        validation_data=(X_test, y_test),
-        verbose=1
-    )
-    
-    # Sauvegarder le modèle
-    model_path_full = os.path.join(model_path, 'lstm_model.h5')
-    model.save(model_path_full)
     print(f"✅ Modèle LSTM sauvegardé: {model_path_full}")
     
-    return model, history
+    return model, train_losses
 
 def _train_random_forest(X_train, y_train, X_test, y_test, model_path):
     """Entraîne un modèle Random Forest"""
@@ -174,7 +186,6 @@ def _train_random_forest(X_train, y_train, X_test, y_test, model_path):
     if len(X_train.shape) == 3:
         X_train_flat = X_train.reshape(X_train.shape[0], -1)
         X_test_flat = X_test.reshape(X_test.shape[0], -1)
-        print(f"🔧 Données reshapées - X_train: {X_train_flat.shape}, X_test: {X_test_flat.shape}")
     else:
         X_train_flat = X_train
         X_test_flat = X_test
@@ -206,8 +217,15 @@ def load_model(model_type='lstm', model_path='models/'):
     """Charge un modèle pré-entraîné"""
     try:
         if model_type == 'lstm':
-            model_path_full = os.path.join(model_path, 'lstm_model.h5')
-            model = tf.keras.models.load_model(model_path_full)
+            model_path_full = os.path.join(model_path, 'lstm_model.pth')
+            checkpoint = torch.load(model_path_full)
+            model = LSTMModel(
+                input_size=checkpoint['input_size'],
+                hidden_size=checkpoint['hidden_size'],
+                num_layers=checkpoint['num_layers']
+            )
+            model.load_state_dict(checkpoint['model_state_dict'])
+            model.eval()
         elif model_type == 'random_forest':
             model_path_full = os.path.join(model_path, 'random_forest_model.pkl')
             model = joblib.load(model_path_full)
@@ -224,27 +242,13 @@ def load_model(model_type='lstm', model_path='models/'):
 if __name__ == "__main__":
     print("🧪 Test du module train_models...")
     
-    # Créer un fichier de test simple
+    # Test avec des données synthétiques
     try:
-        import csv
-        os.makedirs('data', exist_ok=True)
-        with open('data/test.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['value'])
-            for i in range(100):
-                writer.writerow([i * 0.1])
-        print("✅ Fichier de test créé: data/test.csv")
+        # Créer des données de test
+        X_test = np.random.random((100, 30, 1))
+        y_test = np.random.random((100,))
         
-        # Test avec le fichier
-        model, scaler = train_and_save_model(
-            "data/test.csv",
-            column_index=0,
-            sequence_length=10,
-            epochs=2,
-            batch_size=16,
-            model_type='lstm'
-        )
-        print("✅ Test réussi!")
+        model, losses = _train_lstm_pytorch(X_test, y_test, X_test, y_test, 5, 16, 'models/')
+        print("✅ Test PyTorch réussi!")
     except Exception as e:
-
         print(f"❌ Test échoué: {e}")
