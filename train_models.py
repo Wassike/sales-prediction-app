@@ -1,4 +1,4 @@
-# train_models.py - Version PyTorch pour Streamlit Cloud
+# train_models.py - Version PyTorch CORRIGÉE pour Streamlit Cloud
 import pandas as pd
 import numpy as np
 import torch
@@ -31,6 +31,20 @@ class LSTMModel(nn.Module):
         # On prend seulement le dernier output
         out = self.fc(out[:, -1, :])
         return out
+    
+    def predict(self, X):
+        """Méthode predict compatible avec l'interface de scikit-learn"""
+        self.eval()  # Mode évaluation
+        with torch.no_grad():
+            # Conversion en tenseur PyTorch
+            if isinstance(X, np.ndarray):
+                X_tensor = torch.FloatTensor(X)
+            else:
+                X_tensor = X
+            
+            # Prédiction
+            predictions = self.forward(X_tensor)
+            return predictions.numpy()
 
 def train_and_save_model(file_path, column_index=0, sequence_length=50, epochs=10, batch_size=32, model_type='lstm', model_path='models/'):
     """
@@ -218,7 +232,7 @@ def load_model(model_type='lstm', model_path='models/'):
     try:
         if model_type == 'lstm':
             model_path_full = os.path.join(model_path, 'lstm_model.pth')
-            checkpoint = torch.load(model_path_full)
+            checkpoint = torch.load(model_path_full, map_location=torch.device('cpu'))
             model = LSTMModel(
                 input_size=checkpoint['input_size'],
                 hidden_size=checkpoint['hidden_size'],
@@ -249,6 +263,9 @@ if __name__ == "__main__":
         y_test = np.random.random((100,))
         
         model, losses = _train_lstm_pytorch(X_test, y_test, X_test, y_test, 5, 16, 'models/')
-        print("✅ Test PyTorch réussi!")
+        
+        # Test de la méthode predict
+        predictions = model.predict(X_test)
+        print(f"✅ Test PyTorch réussi! Predictions shape: {predictions.shape}")
     except Exception as e:
         print(f"❌ Test échoué: {e}")
