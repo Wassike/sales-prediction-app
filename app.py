@@ -391,7 +391,7 @@ elif page == "Prédictions":
                         seq_reshaped = current_sequence.reshape(1, sequence_length, 1)
                         
                         # Prédire la prochaine valeur
-                       next_pred = model.predict(seq_reshaped)[0, 0]
+                        next_pred = model.predict(seq_reshaped)[0, 0]
                         future_predictions.append(next_pred)
                         
                         # Mettre à jour la séquence
@@ -560,4 +560,5 @@ elif page == "Visualisation des Résultats":
 st.markdown("---")
 st.markdown("📈 Système de Prédiction des Ventes - Développé avec Streamlit et LSTM")
 st.markdown("*Utilise l'intelligence artificielle pour anticiper vos ventes futures*")
+
 
